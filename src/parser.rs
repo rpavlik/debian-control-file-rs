@@ -9,14 +9,16 @@ use nom::{
 };
 
 pub mod control_file {
+    use std::iter;
+
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take_till, take_until, take_while},
+        bytes::complete::{tag, take, take_till, take_until, take_while},
         character::{
             self,
             complete::{alphanumeric1, crlf, line_ending, not_line_ending, one_of, space0, space1},
         },
-        combinator::{consumed, eof, map, not, opt, recognize, value},
+        combinator::{consumed, eof, flat_map, map, not, opt, peek, recognize, value},
         error::context,
         multi::{many0, many1},
         sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
@@ -90,6 +92,25 @@ pub mod control_file {
             recognize(pair(rest_of_line, many0(continuation_line))),
         )
     }
+    /// creates a parser to clean a continuation line with the given initial indent
+    pub fn clean_continuation_lines<'a>(
+        indent: &'a str,
+    ) -> impl Parser<&'a str, Vec<&'a str>, nom::error::Error<&'a str>> {
+        many1(alt((
+            preceded(pair(space1, tag(".")), end_of_line_or_string),
+            preceded(tag(indent), rest_of_line),
+        )))
+    }
+
+    pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
+        map(
+            pair(line, flat_map(peek(space1), clean_continuation_lines)),
+            |(first, mut vec)| {
+                vec.insert(0, first);
+                vec
+            },
+        )(input)
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     pub struct Field<'a> {
@@ -109,6 +130,10 @@ pub mod control_file {
     // pub fn field_value(input: &str) -> IResult<&str, &str> {}
     #[cfg(test)]
     mod tests {
+        use nom::Parser;
+
+        use crate::parser::control_file::clean_continuation_lines;
+
         use super::end_of_line_or_string;
         use super::field;
         use super::field_name;
@@ -178,6 +203,34 @@ baz: baz
             let (i, o) = paragraph(INPUT).expect("have a paragraph");
             assert_eq!(o.len(), 3);
         }
+
+        #[test]
+        fn test_named_single_line() {
+            use super::named_single_line_field;
+            let (i, o) = named_single_line_field("Format")
+                .parse("Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")
+                .expect("this is valid");
+            assert_eq!(
+                o,
+                "http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
+            )
+        }
+
+
+        #[test]
+        fn test_clean_continuation() {
+            let (i, o) = clean_continuation_lines(&"  a\njkl").expect("have a line");
+            assert_eq!(o, "asdf\n");
+            assert_eq!(i, "jkl");
+
+            let (i, o) = rest_of_line(&"\njkl").expect("have a line");
+            assert_eq!(o, "\n");
+            assert_eq!(i, "jkl");
+
+            let (i, o) = rest_of_line(&"").expect("end of string ok");
+            assert!(o.is_empty());
+            assert!(i.is_empty());
+        }
     }
 }
 pub mod copyright_file {
@@ -234,21 +287,32 @@ pub mod copyright_file {
         IResult, Parser,
     };
 
-    use super::control_file::{self, field_pair, rest_of_line, specific_field_name, Field};
+    use super::control_file::{
+        self, field_pair, named_single_line_field, rest_of_line, specific_field_name, Field,
+    };
 
     pub fn format<'a>(input: &'a str) -> IResult<&'a str, Format> {
-        map(
-            preceded(pair(specific_field_name("Format"), space0), rest_of_line),
-            |v| Format(v.to_string()),
-        )(input)
+        map(named_single_line_field("Format"), |v| Format(v.to_string()))(input)
     }
 
     // pub fn header_paragraph(input: &str) -> IResult<&str, &str> {}
 
     #[cfg(test)]
     mod tests {
+        use crate::parser::copyright_file::Format;
 
         #[test]
-        fn test_field_name() {}
+        fn test_format() {
+            use super::format;
+            let (i, o) =
+                format("Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")
+                    .expect("this is valid");
+            assert_eq!(
+                o,
+                Format(
+                    "http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/".to_string()
+                )
+            )
+        }
     }
 }
