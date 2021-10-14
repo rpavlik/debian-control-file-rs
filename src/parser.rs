@@ -1,27 +1,16 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alphanumeric1, char, one_of},
-    combinator::{map_res, recognize},
-    multi::{many0, many1},
-    sequence::{pair, preceded, terminated},
-    IResult,
-};
-
 pub mod control_file {
-    use std::iter;
 
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take, take_till, take_until, take_while, take_while_m_n},
+        bytes::complete::{tag, take_while, take_while_m_n},
         character::{
             self,
-            complete::{alphanumeric1, crlf, line_ending, not_line_ending, one_of, space0, space1},
+            complete::{alphanumeric1, line_ending, not_line_ending, space0, space1},
         },
-        combinator::{consumed, eof, flat_map, map, not, opt, peek, recognize, value},
+        combinator::{eof, flat_map, map, opt, peek, recognize, value},
         error::context,
         multi::{many0, many1},
-        sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+        sequence::{pair, preceded, separated_pair, terminated, tuple},
         IResult, Parser,
     };
 
@@ -109,9 +98,6 @@ pub mod control_file {
         )))
     }
 
-    fn count_leading_spaces(input: &str) -> IResult<&str, usize> {
-        map(space1, |spaces: &str| spaces.len())(input)
-    }
     pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
         map(
             pair(line, flat_map(peek(space1), clean_continuation_lines)),
@@ -141,30 +127,29 @@ pub mod control_file {
     #[cfg(test)]
     mod tests {
         use nom::combinator::all_consuming;
-        use nom::combinator::consumed;
+
         use nom::Parser;
 
-        use crate::parser::control_file::clean_continuation_lines;
         use crate::parser::control_file::clean_multiline;
 
         use super::end_of_line_or_string;
         use super::field;
         use super::field_name;
         use super::line;
-        use super::paragraph;
+
         use super::rest_of_line;
         use super::Field;
 
         #[test]
         fn test_field_name() {
-            let (i, o) = field_name(&"asdf: ").unwrap();
+            let (i, o) = field_name("asdf: ").unwrap();
             assert_eq!(o, "asdf");
             assert_eq!(i, " ");
         }
 
         #[test]
         fn test_field() {
-            let (i, o) = field(&"asdf: jkl").unwrap();
+            let (i, o) = field("asdf: jkl").unwrap();
             assert_eq!(
                 o,
                 Field {
@@ -177,30 +162,30 @@ pub mod control_file {
 
         #[test]
         fn test_eol() {
-            let (i, o) = end_of_line_or_string(&"\nasdf").expect("have an line ending");
+            let (_i, o) = end_of_line_or_string("\nasdf").expect("have an line ending");
             assert_eq!(o, "\n");
 
-            let (i, o) = end_of_line_or_string(&"").expect("have an end of input");
+            let (_i, _o) = end_of_line_or_string("").expect("have an end of input");
         }
 
         #[test]
         fn test_line() {
-            let (i, o) = line(&"asdf\njkl").expect("have a line");
+            let (i, o) = line("asdf\njkl").expect("have a line");
             assert_eq!(o, "asdf\n");
             assert_eq!(i, "jkl");
         }
 
         #[test]
         fn test_rest_of_line() {
-            let (i, o) = rest_of_line(&"asdf\njkl").expect("have a line");
+            let (i, o) = rest_of_line("asdf\njkl").expect("have a line");
             assert_eq!(o, "asdf\n");
             assert_eq!(i, "jkl");
 
-            let (i, o) = rest_of_line(&"\njkl").expect("have a line");
+            let (i, o) = rest_of_line("\njkl").expect("have a line");
             assert_eq!(o, "\n");
             assert_eq!(i, "jkl");
 
-            let (i, o) = rest_of_line(&"").expect("end of string ok");
+            let (i, o) = rest_of_line("").expect("end of string ok");
             assert!(o.is_empty());
             assert!(i.is_empty());
         }
@@ -219,7 +204,7 @@ pub mod control_file {
         #[test]
         fn test_named_single_line() {
             use super::named_single_line_field;
-            let (i, o) = named_single_line_field("Format")
+            let (_i, o) = named_single_line_field("Format")
                 .parse("Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")
                 .expect("this is valid");
             assert_eq!(
@@ -230,19 +215,18 @@ pub mod control_file {
 
         #[test]
         fn test_clean_continuation() {
-            let (i, o) =
-                all_consuming(clean_multiline)(&"0\n  a\n    .\n  b").expect("have a line");
+            let (i, o) = all_consuming(clean_multiline)("0\n  a\n    .\n  b").expect("have a line");
             assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
             assert!(i.is_empty());
 
             // one line is less indented but still indented
-            let (i, o) = all_consuming(clean_multiline)(&"0\n  a\n  .\n b").expect("have a line");
+            let (i, o) = all_consuming(clean_multiline)("0\n  a\n  .\n b").expect("have a line");
             assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
             assert!(i.is_empty());
 
             // One line is more indented
             let (i, o) =
-                all_consuming(clean_multiline)(&"0\n  a\n    .\n   b").expect("have a line");
+                all_consuming(clean_multiline)("0\n  a\n    .\n   b").expect("have a line");
             assert_eq!(o, vec!["0\n", "a\n", "\n", " b"]);
             assert!(i.is_empty());
         }
@@ -288,19 +272,7 @@ pub mod copyright_file {
         pub license: Option<License>,
         pub copyright: Option<Copyright>,
     }
-    use nom::{
-        branch::alt,
-        bytes::complete::{tag, take_till, take_until, take_while},
-        character::{
-            self,
-            complete::{alphanumeric1, crlf, line_ending, not_line_ending, one_of, space0, space1},
-        },
-        combinator::{consumed, eof, map, map_parser, not, opt, recognize, value},
-        error::context,
-        multi::{many0, many1},
-        sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-        IResult, Parser,
-    };
+    use nom::{combinator::map, IResult};
 
     use super::control_file::named_single_line_field;
 
@@ -309,7 +281,9 @@ pub mod copyright_file {
     }
 
     pub fn upstream_name(input: &str) -> IResult<&str, UpstreamName> {
-        map(named_single_line_field("Upstream-Name"), |v| UpstreamName(v.to_string()))(input)
+        map(named_single_line_field("Upstream-Name"), |v| {
+            UpstreamName(v.to_string())
+        })(input)
     }
     // pub fn header_paragraph(input: &str) -> IResult<&str, &str> {}
 
@@ -320,7 +294,7 @@ pub mod copyright_file {
         #[test]
         fn test_format() {
             use super::format;
-            let (i, o) =
+            let (_i, o) =
                 format("Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")
                     .expect("this is valid");
             assert_eq!(
