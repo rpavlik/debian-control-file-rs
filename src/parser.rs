@@ -13,7 +13,7 @@ pub mod control_file {
 
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take, take_till, take_until, take_while},
+        bytes::complete::{tag, take, take_till, take_until, take_while, take_while_m_n},
         character::{
             self,
             complete::{alphanumeric1, crlf, line_ending, not_line_ending, one_of, space0, space1},
@@ -41,22 +41,22 @@ pub mod control_file {
     pub fn end_of_line_or_string(input: &str) -> IResult<&str, &str> {
         alt((eof, line_ending))(input)
     }
-    pub fn line(input: &str) -> IResult<&str, &str> {
+    fn line(input: &str) -> IResult<&str, &str> {
         recognize(pair(my_non_line_ending, end_of_line_or_string))(input)
     }
 
-    pub fn paragraph(input: &str) -> IResult<&str, Vec<&str>> {
+    fn paragraph(input: &str) -> IResult<&str, Vec<&str>> {
         many0(recognize(pair(not_line_ending, end_of_line_or_string)))(input)
     }
 
-    pub fn rest_of_line(input: &str) -> IResult<&str, &str> {
+    fn rest_of_line(input: &str) -> IResult<&str, &str> {
         recognize(pair(opt(not_line_ending), end_of_line_or_string))(input)
     }
-    pub fn continuation_line(input: &str) -> IResult<&str, &str> {
+    fn continuation_line(input: &str) -> IResult<&str, &str> {
         recognize(tuple((space1, my_non_line_ending, end_of_line_or_string)))(input)
     }
 
-    pub fn field_pair(input: &str) -> IResult<&str, (&str, &str)> {
+    fn field_pair(input: &str) -> IResult<&str, (&str, &str)> {
         separated_pair(
             field_name,
             space0,
@@ -65,7 +65,7 @@ pub mod control_file {
     }
 
     /// creates a parser for a field name
-    pub fn specific_field_name<'a>(
+    fn specific_field_name<'a>(
         name: &'static str,
     ) -> impl Parser<&'a str, (), nom::error::Error<&'a str>> {
         value((), field_name.and_then(tag(name)))
@@ -93,15 +93,25 @@ pub mod control_file {
         )
     }
     /// creates a parser to clean a continuation line with the given initial indent
-    pub fn clean_continuation_lines<'a>(
+    fn clean_continuation_lines<'a>(
+        // max_indent: usize,
         indent: &'a str,
     ) -> impl Parser<&'a str, Vec<&'a str>, nom::error::Error<&'a str>> {
+        let max_indent = indent.len();
+        // takes some number of spaces not to exceed max_indent, and returns ()
+        let take_up_to_max_indent =
+            move |input: &'a str| value((), take_while_m_n(1, max_indent, |c| c == ' '))(input);
+        // take exactly the indent originally passed, and returns ()
+        let take_indent = value((), tag(indent));
         many1(alt((
             preceded(pair(space1, tag(".")), end_of_line_or_string),
-            preceded(tag(indent), rest_of_line),
+            preceded(alt((take_indent, take_up_to_max_indent)), rest_of_line),
         )))
     }
 
+    fn count_leading_spaces(input: &str) -> IResult<&str, usize> {
+        map(space1, |spaces: &str| spaces.len())(input)
+    }
     pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
         map(
             pair(line, flat_map(peek(space1), clean_continuation_lines)),
@@ -130,9 +140,12 @@ pub mod control_file {
     // pub fn field_value(input: &str) -> IResult<&str, &str> {}
     #[cfg(test)]
     mod tests {
+        use nom::combinator::all_consuming;
+        use nom::combinator::consumed;
         use nom::Parser;
 
         use crate::parser::control_file::clean_continuation_lines;
+        use crate::parser::control_file::clean_multiline;
 
         use super::end_of_line_or_string;
         use super::field;
@@ -192,18 +205,17 @@ pub mod control_file {
             assert!(i.is_empty());
         }
         #[test]
-        fn test_paragraph() {
-            const INPUT: &str = "asdf: jkl
-foo:
-  bar
+        //         fn test_paragraph() {
+        //             const INPUT: &str = "asdf: jkl
+        // foo:
+        //   bar
 
-baz: baz
-            ";
+        // baz: baz
+        //             ";
 
-            let (i, o) = paragraph(INPUT).expect("have a paragraph");
-            assert_eq!(o.len(), 3);
-        }
-
+        //             let (i, o) = paragraph(INPUT).expect("have a paragraph");
+        //             assert_eq!(o.len(), 3);
+        //         }
         #[test]
         fn test_named_single_line() {
             use super::named_single_line_field;
@@ -216,19 +228,22 @@ baz: baz
             )
         }
 
-
         #[test]
         fn test_clean_continuation() {
-            let (i, o) = clean_continuation_lines(&"  a\njkl").expect("have a line");
-            assert_eq!(o, "asdf\n");
-            assert_eq!(i, "jkl");
+            let (i, o) =
+                all_consuming(clean_multiline)(&"0\n  a\n    .\n  b").expect("have a line");
+            assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
+            assert!(i.is_empty());
 
-            let (i, o) = rest_of_line(&"\njkl").expect("have a line");
-            assert_eq!(o, "\n");
-            assert_eq!(i, "jkl");
+            // one line is less indented but still indented
+            let (i, o) = all_consuming(clean_multiline)(&"0\n  a\n  .\n b").expect("have a line");
+            assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
+            assert!(i.is_empty());
 
-            let (i, o) = rest_of_line(&"").expect("end of string ok");
-            assert!(o.is_empty());
+            // One line is more indented
+            let (i, o) =
+                all_consuming(clean_multiline)(&"0\n  a\n    .\n   b").expect("have a line");
+            assert_eq!(o, vec!["0\n", "a\n", "\n", " b"]);
             assert!(i.is_empty());
         }
     }
@@ -287,14 +302,15 @@ pub mod copyright_file {
         IResult, Parser,
     };
 
-    use super::control_file::{
-        self, field_pair, named_single_line_field, rest_of_line, specific_field_name, Field,
-    };
+    use super::control_file::named_single_line_field;
 
-    pub fn format<'a>(input: &'a str) -> IResult<&'a str, Format> {
+    pub fn format(input: &str) -> IResult<&str, Format> {
         map(named_single_line_field("Format"), |v| Format(v.to_string()))(input)
     }
 
+    pub fn upstream_name(input: &str) -> IResult<&str, UpstreamName> {
+        map(named_single_line_field("Upstream-Name"), |v| UpstreamName(v.to_string()))(input)
+    }
     // pub fn header_paragraph(input: &str) -> IResult<&str, &str> {}
 
     #[cfg(test)]
