@@ -2,14 +2,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use nom::{combinator::map, IResult};
+use nom::{combinator::map, multi::many1, IResult};
 
-use crate::control_file::{named_single_line_field, FieldName};
+use crate::control_file::{multi_line_field, named_single_line_field, FieldName};
 
 pub trait ParseField: Sized {
     fn parse(input: &str) -> IResult<&str, Self>;
 }
-trait SingleLineField: FieldName {}
+pub trait SingleLineField: FieldName {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Format(pub String);
@@ -78,7 +78,7 @@ impl FieldName for License {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Copyright(pub String);
+pub struct Copyright(pub Vec<String>);
 impl FieldName for Copyright {
     const NAME: &'static str = "Copyright";
 }
@@ -92,6 +92,26 @@ impl FieldName for Files {
 impl<T: SingleLineField + From<String>> ParseField for T {
     fn parse(input: &str) -> IResult<&str, Self> {
         map(named_single_line_field(T::NAME), |v| v.to_string().into())(input)
+    }
+}
+fn parse_field_with_trimmed_list<T: FieldName>(input: &str) -> IResult<&str, Vec<String>> {
+    map(many1(multi_line_field::<T>), |lines| {
+        lines
+            .into_iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    })(input)
+}
+impl ParseField for Copyright {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
+    }
+}
+impl ParseField for Files {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
     }
 }
 

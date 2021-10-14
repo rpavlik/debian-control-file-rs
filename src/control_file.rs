@@ -135,6 +135,19 @@ pub trait FieldName {
     const NAME: &'static str;
 }
 
+/// Parse a single-line field name and value.
+/// Returns the value, including possibly a trailing newline
+pub fn single_line_field<T: FieldName>(input: &str) -> IResult<&str, &str> {
+    named_single_line_field(T::NAME)(input)
+}
+
+/// Parse a multi-line field name and value.
+/// Returns the value, including any newlines and (on second lines and beyond) leading blanks,
+/// and a leading newline if the first line is blank
+pub fn multi_line_field<T: FieldName>(input: &str) -> IResult<&str, &str> {
+    named_multi_line_field(T::NAME)(input)
+}
+
 #[cfg(test)]
 mod tests {
     use nom::combinator::all_consuming;
