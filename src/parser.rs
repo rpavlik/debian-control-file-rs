@@ -14,7 +14,7 @@ pub mod control_file {
         IResult, Parser,
     };
 
-    pub fn field_name(input: &str) -> IResult<&str, &str> {
+    fn field_name(input: &str) -> IResult<&str, &str> {
         context(
             "field name",
             terminated(
@@ -24,10 +24,10 @@ pub mod control_file {
         )(input)
     }
 
-    pub fn my_non_line_ending(input: &str) -> IResult<&str, &str> {
+    fn my_non_line_ending(input: &str) -> IResult<&str, &str> {
         take_while(|c| c != '\n' && c != '\r')(input)
     }
-    pub fn end_of_line_or_string(input: &str) -> IResult<&str, &str> {
+    fn end_of_line_or_string(input: &str) -> IResult<&str, &str> {
         alt((eof, line_ending))(input)
     }
     fn line(input: &str) -> IResult<&str, &str> {
@@ -35,10 +35,12 @@ pub mod control_file {
     }
 
     pub fn paragraph(input: &str) -> IResult<&str, Vec<&str>> {
-        many0(recognize(alt((
-            pair(not_line_ending, line_ending),
-            pair(take_while1(|c| c != '\n' && c != '\r'), eof),
-        ))))(input)
+        let at_least_one_non_lineending =
+            move |input| take_while1(|c| c != '\n' && c != '\r')(input);
+        many0(alt((
+            recognize(pair(at_least_one_non_lineending, line_ending)),
+            recognize(pair(at_least_one_non_lineending, eof)),
+        )))(input)
     }
 
     fn rest_of_line(input: &str) -> IResult<&str, &str> {
@@ -217,7 +219,7 @@ foo:
 baz: baz
                     "#
             .trim_start();
-            let (i, o) = paragraph(input).expect("have a paragraph");
+            let (_i, o) = paragraph(input).expect("have a paragraph");
             assert_eq!(o.len(), 3);
         }
         #[test]
