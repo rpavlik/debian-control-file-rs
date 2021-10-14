@@ -19,8 +19,8 @@ pub mod control_file {
         combinator::{consumed, eof, map, not, opt, recognize, value},
         error::context,
         multi::{many0, many1},
-        sequence::{delimited, pair, separated_pair, terminated, tuple},
-        IResult,
+        sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+        IResult, Parser,
     };
 
     pub fn field_name(input: &str) -> IResult<&str, &str> {
@@ -52,6 +52,43 @@ pub mod control_file {
     }
     pub fn continuation_line(input: &str) -> IResult<&str, &str> {
         recognize(tuple((space1, my_non_line_ending, end_of_line_or_string)))(input)
+    }
+
+    pub fn field_pair(input: &str) -> IResult<&str, (&str, &str)> {
+        separated_pair(
+            field_name,
+            space0,
+            recognize(pair(rest_of_line, many0(continuation_line))),
+        )(input)
+    }
+
+    /// creates a parser for a field name
+    pub fn specific_field_name<'a>(
+        name: &'static str,
+    ) -> impl Parser<&'a str, (), nom::error::Error<&'a str>> {
+        value((), field_name.and_then(tag(name)))
+    }
+
+    /// creates a parser for a single-line field with a specific name.
+    ///
+    /// The created parser returns the value, including the trailing line ending.
+    pub fn named_single_line_field<'a>(
+        name: &'static str,
+    ) -> impl Parser<&'a str, &'a str, nom::error::Error<&'a str>> {
+        preceded(pair(specific_field_name(name), space0), rest_of_line)
+    }
+
+    /// creates a parser for a possibly-multi-line field with a specific name.
+    ///
+    /// The created parser returns the value, including any newlines and (on second lines and beyond) leading blanks,
+    /// and a leading newline if the first line is blank
+    pub fn named_multi_line_field<'a>(
+        name: &'static str,
+    ) -> impl Parser<&'a str, &'a str, nom::error::Error<&'a str>> {
+        preceded(
+            pair(specific_field_name(name), space0),
+            recognize(pair(rest_of_line, many0(continuation_line))),
+        )
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -146,15 +183,72 @@ baz: baz
 pub mod copyright_file {
 
     #[derive(Debug, Clone, PartialEq)]
-    enum Fields {
-        Format(String),
-        UpstreamName(String),
-        UpstreamContact(String),
-        Source(String),
-        Disclaimer(String),
-        Comment(String),
-        License(String),
-        Copyright(String),
-        Files(Vec<String>),
+    pub struct Format(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct UpstreamName(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct UpstreamContact(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Source(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Disclaimer(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Comment(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct License(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Copyright(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Files(pub Vec<String>);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct HeaderParagraph {
+        pub format: Format,
+        pub upstream_name: Option<UpstreamName>,
+        pub upstream_contact: Option<UpstreamContact>,
+        pub source: Option<Source>,
+        pub disclaimer: Option<Disclaimer>,
+        pub comment: Option<Comment>,
+        pub license: Option<License>,
+        pub copyright: Option<Copyright>,
+    }
+    use nom::{
+        branch::alt,
+        bytes::complete::{tag, take_till, take_until, take_while},
+        character::{
+            self,
+            complete::{alphanumeric1, crlf, line_ending, not_line_ending, one_of, space0, space1},
+        },
+        combinator::{consumed, eof, map, map_parser, not, opt, recognize, value},
+        error::context,
+        multi::{many0, many1},
+        sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+        IResult, Parser,
+    };
+
+    use super::control_file::{self, field_pair, rest_of_line, specific_field_name, Field};
+
+    pub fn format<'a>(input: &'a str) -> IResult<&'a str, Format> {
+        map(
+            preceded(pair(specific_field_name("Format"), space0), rest_of_line),
+            |v| Format(v.to_string()),
+        )(input)
+    }
+
+    // pub fn header_paragraph(input: &str) -> IResult<&str, &str> {}
+
+    #[cfg(test)]
+    mod tests {
+
+        #[test]
+        fn test_field_name() {}
     }
 }
