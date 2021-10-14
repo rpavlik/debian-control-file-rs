@@ -2,7 +2,7 @@ pub mod control_file {
 
     use nom::{
         branch::alt,
-        bytes::complete::{tag, take_while, take_while_m_n},
+        bytes::complete::{tag, take_while, take_while1, take_while_m_n},
         character::{
             self,
             complete::{alphanumeric1, line_ending, not_line_ending, space0, space1},
@@ -34,8 +34,11 @@ pub mod control_file {
         recognize(pair(my_non_line_ending, end_of_line_or_string))(input)
     }
 
-    fn paragraph(input: &str) -> IResult<&str, Vec<&str>> {
-        many0(recognize(pair(not_line_ending, end_of_line_or_string)))(input)
+    pub fn paragraph(input: &str) -> IResult<&str, Vec<&str>> {
+        many0(recognize(alt((
+            pair(not_line_ending, line_ending),
+            pair(take_while1(|c| c != '\n' && c != '\r'), eof),
+        ))))(input)
     }
 
     fn rest_of_line(input: &str) -> IResult<&str, &str> {
@@ -89,22 +92,36 @@ pub mod control_file {
         indent: &'a str,
     ) -> impl Parser<&'a str, Vec<&'a str>, nom::error::Error<&'a str>> {
         let max_indent = indent.len();
+
         // takes some number of spaces not to exceed max_indent, and returns ()
         let take_up_to_max_indent =
             move |input: &'a str| value((), take_while_m_n(1, max_indent, |c| c == ' '))(input);
+
         // take exactly the indent originally passed, and returns ()
         let take_indent = value((), tag(indent));
+
         many1(alt((
             preceded(pair(space1, tag(".")), end_of_line_or_string),
             preceded(alt((take_indent, take_up_to_max_indent)), rest_of_line),
         )))
     }
 
+    /// Cleans a multi-line string, assuming that the first newline is on the same line as the field name.
     pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
         map(
-            pair(line, flat_map(peek(space1), clean_continuation_lines)),
-            |(first, mut vec)| {
-                vec.insert(0, first);
+            pair(
+                line,
+                flat_map(
+                    // get leading spaces on first continuation line without consuming
+                    peek(space1),
+                    // create a parser that trims up to that many leading spaces and apply it
+                    clean_continuation_lines,
+                ),
+            ),
+            // the continuations lines are in a vec, but the first line is not.
+            // fix that.
+            |(first_line, mut vec)| {
+                vec.insert(0, first_line);
                 vec
             },
         )(input)
@@ -131,6 +148,7 @@ pub mod control_file {
         use nom::combinator::all_consuming;
 
         use crate::parser::control_file::clean_multiline;
+        use crate::parser::control_file::paragraph;
 
         use super::end_of_line_or_string;
         use super::field;
@@ -190,17 +208,18 @@ pub mod control_file {
             assert!(i.is_empty());
         }
         #[test]
-        //         fn test_paragraph() {
-        //             const INPUT: &str = "asdf: jkl
-        // foo:
-        //   bar
+        fn test_paragraph() {
+            let input: &str = r#"
+asdf: jkl
+foo:
+  bar
 
-        // baz: baz
-        //             ";
-
-        //             let (i, o) = paragraph(INPUT).expect("have a paragraph");
-        //             assert_eq!(o.len(), 3);
-        //         }
+baz: baz
+                    "#
+            .trim_start();
+            let (i, o) = paragraph(input).expect("have a paragraph");
+            assert_eq!(o.len(), 3);
+        }
         #[test]
         fn test_named_single_line() {
             use super::named_single_line_field;
