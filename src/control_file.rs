@@ -108,19 +108,18 @@ fn clean_continuation_lines<'a>(
         preceded(alt((take_indent, take_up_to_max_indent)), rest_of_line),
     )))
 }
-
+pub fn lines_with_cleaned_leading_indent(input: &str) -> IResult<&str, Vec<&str>> {
+    flat_map(
+        // get leading spaces on first continuation line without consuming
+        peek(space1),
+        // create a parser that trims up to that many leading spaces and apply it
+        clean_continuation_lines,
+    )(input)
+}
 /// Cleans a multi-line string, assuming that the first newline is on the same line as the field name.
-pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
+pub fn cleaned_multiline(input: &str) -> IResult<&str, Vec<&str>> {
     map(
-        pair(
-            line,
-            flat_map(
-                // get leading spaces on first continuation line without consuming
-                peek(space1),
-                // create a parser that trims up to that many leading spaces and apply it
-                clean_continuation_lines,
-            ),
-        ),
+        pair(line, lines_with_cleaned_leading_indent),
         // the continuations lines are in a vec, but the first line is not.
         // fix that.
         |(first_line, mut vec)| {
@@ -152,7 +151,7 @@ pub fn multi_line_field<T: FieldName>(input: &str) -> IResult<&str, &str> {
 mod tests {
     use nom::combinator::all_consuming;
 
-    use super::clean_multiline;
+    use super::cleaned_multiline;
     use super::end_of_line_or_string;
     use super::field_name;
     use super::field_pair;
@@ -231,17 +230,17 @@ baz: baz
 
     #[test]
     fn test_clean_continuation() {
-        let (i, o) = all_consuming(clean_multiline)("0\n  a\n    .\n  b").expect("have a line");
+        let (i, o) = all_consuming(cleaned_multiline)("0\n  a\n    .\n  b").expect("have a line");
         assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
         assert!(i.is_empty());
 
         // one line is less indented but still indented
-        let (i, o) = all_consuming(clean_multiline)("0\n  a\n  .\n b").expect("have a line");
+        let (i, o) = all_consuming(cleaned_multiline)("0\n  a\n  .\n b").expect("have a line");
         assert_eq!(o, vec!["0\n", "a\n", "\n", "b"]);
         assert!(i.is_empty());
 
         // One line is more indented
-        let (i, o) = all_consuming(clean_multiline)("0\n  a\n    .\n   b").expect("have a line");
+        let (i, o) = all_consuming(cleaned_multiline)("0\n  a\n    .\n   b").expect("have a line");
         assert_eq!(o, vec!["0\n", "a\n", "\n", " b"]);
         assert!(i.is_empty());
     }

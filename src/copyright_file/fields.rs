@@ -64,17 +64,32 @@ pub struct Disclaimer(pub String);
 impl FieldName for Disclaimer {
     const NAME: &'static str = "Disclaimer";
 }
+impl ParseField for Disclaimer {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(multi_line_field::<Self>, |v| Self(v.to_owned()))(input)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Comment(pub String);
 impl FieldName for Comment {
     const NAME: &'static str = "Comment";
 }
+impl ParseField for Comment {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(multi_line_field::<Self>, |v| Self(v.to_owned()))(input)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct License(pub String);
 impl FieldName for License {
     const NAME: &'static str = "License";
+}
+impl ParseField for License {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(multi_line_field::<Self>, |v| Self(v.to_owned()))(input)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
