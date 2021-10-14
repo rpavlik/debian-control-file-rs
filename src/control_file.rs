@@ -130,22 +130,11 @@ pub fn clean_multiline(input: &str) -> IResult<&str, Vec<&str>> {
     )(input)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Field<'a> {
-    pub field_name: &'a str,
-    pub value: &'a str,
+/// Implement to statically provide your field name
+pub trait FieldName {
+    const NAME: &'static str;
 }
-pub fn field(input: &str) -> IResult<&str, Field<'_>> {
-    map(
-        separated_pair(
-            field_name,
-            space0,
-            recognize(pair(rest_of_line, many0(continuation_line))),
-        ),
-        |(field_name, value)| Field { field_name, value },
-    )(input)
-}
-// pub fn field_value(input: &str) -> IResult<&str, &str> {}
+
 #[cfg(test)]
 mod tests {
     use nom::combinator::all_consuming;

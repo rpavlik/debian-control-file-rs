@@ -4,13 +4,9 @@
 
 use nom::{combinator::map, IResult};
 
-use crate::control_file::named_single_line_field;
+use crate::control_file::{named_single_line_field, FieldName};
 
-trait FieldName {
-    const NAME: &'static str;
-}
-
-trait ParseField: Sized {
+pub trait ParseField: Sized {
     fn parse(input: &str) -> IResult<&str, Self>;
 }
 trait SingleLineField: FieldName {}
