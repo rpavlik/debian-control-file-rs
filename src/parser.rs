@@ -7,7 +7,7 @@ pub mod control_file {
             self,
             complete::{alphanumeric1, line_ending, not_line_ending, space0, space1},
         },
-        combinator::{eof, flat_map, map, opt, peek, recognize, value},
+        combinator::{eof, flat_map, map, map_parser, opt, peek, recognize, value},
         error::context,
         multi::{many0, many1},
         sequence::{pair, preceded, separated_pair, terminated, tuple},
@@ -53,11 +53,13 @@ pub mod control_file {
         )(input)
     }
 
+    pub fn field_string(input: &str) -> IResult<&str, &str> {
+        recognize(field_pair)(input)
+    }
+
     /// creates a parser for a field name
-    fn specific_field_name<'a>(
-        name: &'static str,
-    ) -> impl Parser<&'a str, (), nom::error::Error<&'a str>> {
-        value((), field_name.and_then(tag(name)))
+    fn specific_field_name<'a>(name: &'static str) -> impl FnMut(&'a str) -> IResult<&'a str, ()> {
+        value((), map_parser(field_name, tag(name)))
     }
 
     /// creates a parser for a single-line field with a specific name.
@@ -65,7 +67,7 @@ pub mod control_file {
     /// The created parser returns the value, including the trailing line ending.
     pub fn named_single_line_field<'a>(
         name: &'static str,
-    ) -> impl Parser<&'a str, &'a str, nom::error::Error<&'a str>> {
+    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
         preceded(pair(specific_field_name(name), space0), rest_of_line)
     }
 
@@ -75,7 +77,7 @@ pub mod control_file {
     /// and a leading newline if the first line is blank
     pub fn named_multi_line_field<'a>(
         name: &'static str,
-    ) -> impl Parser<&'a str, &'a str, nom::error::Error<&'a str>> {
+    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
         preceded(
             pair(specific_field_name(name), space0),
             recognize(pair(rest_of_line, many0(continuation_line))),
@@ -127,8 +129,6 @@ pub mod control_file {
     #[cfg(test)]
     mod tests {
         use nom::combinator::all_consuming;
-
-        use nom::Parser;
 
         use crate::parser::control_file::clean_multiline;
 
@@ -204,9 +204,10 @@ pub mod control_file {
         #[test]
         fn test_named_single_line() {
             use super::named_single_line_field;
-            let (_i, o) = named_single_line_field("Format")
-                .parse("Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")
-                .expect("this is valid");
+            let (_i, o) = named_single_line_field("Format")(
+                "Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/",
+            )
+            .expect("this is valid");
             assert_eq!(
                 o,
                 "http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
