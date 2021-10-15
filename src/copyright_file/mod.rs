@@ -151,6 +151,7 @@ pub fn copyright_file(input: &str) -> IResult<&str, CopyrightFile> {
 }
 #[cfg(test)]
 mod tests {
+    use crate::copyright_file::BodyParagraph;
 
     #[test]
     fn test_format() {
@@ -201,5 +202,15 @@ License: BSL-1.0
         .expect("this is valid");
         assert!(i.is_empty());
         println!("{:?}", &o);
+        for para in o.body_paragraphs {
+            if let BodyParagraph::Files(files_para) = para {
+                for file in files_para.files.0 {
+                    assert_eq!(file, file.trim());
+                }
+                for copyright in files_para.copyright.0 {
+                    assert_eq!(copyright, copyright.trim());
+                }
+            }
+        }
     }
 }

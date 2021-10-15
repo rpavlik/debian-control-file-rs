@@ -2,9 +2,15 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use nom::{combinator::map, multi::many1, IResult};
+use nom::{
+    combinator::{map, map_parser},
+    multi::many1,
+    IResult,
+};
 
-use crate::control_file::{multi_line_field, named_single_line_field, FieldName};
+use crate::control_file::{
+    cleaned_multiline, multi_line_field, named_single_line_field, FieldName,
+};
 
 pub trait ParseField: Sized {
     fn parse(input: &str) -> IResult<&str, Self>;
@@ -132,14 +138,17 @@ impl<T: SingleLineField + From<String>> ParseField for T {
 
 /// Parses a (possibly) multi-line field into a list of trimmed, non-empty strings.
 fn parse_field_with_trimmed_list<T: FieldName>(input: &str) -> IResult<&str, Vec<String>> {
-    map(many1(multi_line_field::<T>), |lines| {
-        lines
-            .into_iter()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect()
-    })(input)
+    map(
+        map_parser(multi_line_field::<T>, cleaned_multiline),
+        |lines| {
+            lines
+                .into_iter()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        },
+    )(input)
 }
 
 #[cfg(test)]
