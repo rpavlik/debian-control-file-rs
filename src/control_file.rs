@@ -150,6 +150,7 @@ pub fn multi_line_field<T: FieldName>(input: &str) -> IResult<&str, &str> {
 #[cfg(test)]
 mod tests {
     use nom::combinator::all_consuming;
+    use nom::combinator::map_parser;
 
     use super::cleaned_multiline;
     use super::end_of_line_or_string;
@@ -227,7 +228,27 @@ baz: baz
             "http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
         )
     }
+    #[test]
+    fn test_named_multi_line() {
+        use super::named_multi_line_field;
+        let mut parser = named_multi_line_field("License");
+        let (_i, o) = parser("License: Apache-2.0").expect("this is valid");
+        assert_eq!(o, "Apache-2.0");
 
+        let (_i, o) = parser("License:\n  asdf").expect("this is valid");
+        assert_eq!(o, "\n  asdf");
+    }
+
+    #[test]
+    fn test_cleaned_multi_line() {
+        use super::named_multi_line_field;
+        let mut parser = map_parser(named_multi_line_field("License"), cleaned_multiline);
+        let (_i, o) = parser("License: Apache-2.0").expect("this is valid");
+        assert_eq!(o, vec!["Apache-2.0"]);
+
+        let (_i, o) = parser("License:\n  asdf").expect("this is valid");
+        assert_eq!(o, vec!["\n", "asdf"]);
+    }
     #[test]
     fn test_clean_continuation() {
         let (i, o) = all_consuming(cleaned_multiline)("0\n  a\n    .\n  b").expect("have a line");
