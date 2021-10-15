@@ -88,7 +88,13 @@ impl FieldName for License {
 }
 impl ParseField for License {
     fn parse(input: &str) -> IResult<&str, Self> {
-        map(multi_line_field::<Self>, |v| Self(v.to_owned()))(input)
+        map(multi_line_field::<Self>, |v| {
+            Self(if v.matches('\n').count() <= 1 {
+                v.trim().to_owned()
+            } else {
+                v.to_owned()
+            })
+        })(input)
     }
 }
 
@@ -106,9 +112,13 @@ impl FieldName for Files {
 
 impl<T: SingleLineField + From<String>> ParseField for T {
     fn parse(input: &str) -> IResult<&str, Self> {
-        map(named_single_line_field(T::NAME), |v| v.to_string().into())(input)
+        map(named_single_line_field(T::NAME), |v| {
+            v.trim().to_string().into()
+        })(input)
     }
 }
+
+/// Parses a (possibly) multi-line field into a list of trimmed, non-empty strings.
 fn parse_field_with_trimmed_list<T: FieldName>(input: &str) -> IResult<&str, Vec<String>> {
     map(many1(multi_line_field::<T>), |lines| {
         lines
@@ -119,6 +129,7 @@ fn parse_field_with_trimmed_list<T: FieldName>(input: &str) -> IResult<&str, Vec
             .collect()
     })(input)
 }
+
 impl ParseField for Copyright {
     fn parse(input: &str) -> IResult<&str, Self> {
         map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)

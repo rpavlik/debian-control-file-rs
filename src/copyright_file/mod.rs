@@ -7,7 +7,7 @@ pub mod fields;
 use nom::{
     branch::{alt, permutation},
     character::complete::{line_ending, space0, space1},
-    combinator::{map, map_parser, opt},
+    combinator::{all_consuming, map, map_parser, opt},
     multi::many0,
     sequence::{delimited, pair, preceded},
     IResult,
@@ -112,6 +112,7 @@ pub fn license_detail_paragraph(input: &str) -> IResult<&str, LicenseDetailParag
     )(input)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum BodyParagraph {
     Files(FilesParagraph),
     LicenseDetail(LicenseDetailParagraph),
@@ -129,6 +130,7 @@ pub fn body_paragraph(input: &str) -> IResult<&str, BodyParagraph> {
     )(input)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct CopyrightFile {
     pub header_paragraph: HeaderParagraph,
     pub body_paragraphs: Vec<BodyParagraph>,
@@ -136,11 +138,11 @@ pub struct CopyrightFile {
 
 pub fn copyright_file(input: &str) -> IResult<&str, CopyrightFile> {
     map(
-        delimited(
+        all_consuming(delimited(
             many0(pair(space0, line_ending)),
             pair(header_paragraph, many0(body_paragraph)),
             space0,
-        ),
+        )),
         |(header_paragraph, body_paragraphs)| CopyrightFile {
             header_paragraph,
             body_paragraphs,
@@ -153,7 +155,7 @@ mod tests {
     #[test]
     fn test_format() {
         use super::copyright_file;
-        let (_i, o) = copyright_file(
+        let (i, o) = copyright_file(
             r#"
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 
@@ -197,5 +199,7 @@ License: BSL-1.0
             "#,
         )
         .expect("this is valid");
+        assert!(i.is_empty());
+        println!("{:?}", &o);
     }
 }
