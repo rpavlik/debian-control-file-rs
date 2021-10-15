@@ -119,12 +119,17 @@ pub fn lines_with_cleaned_leading_indent(input: &str) -> IResult<&str, Vec<&str>
 /// Cleans a multi-line string, assuming that the first newline is on the same line as the field name.
 pub fn cleaned_multiline(input: &str) -> IResult<&str, Vec<&str>> {
     map(
-        pair(line, lines_with_cleaned_leading_indent),
+        pair(line, opt(lines_with_cleaned_leading_indent)),
         // the continuations lines are in a vec, but the first line is not.
         // fix that.
-        |(first_line, mut vec)| {
-            vec.insert(0, first_line);
-            vec
+        |(first_line, maybe_vec)| {
+            maybe_vec.map_or_else(
+                || vec![first_line],
+                |mut vec| {
+                    vec.insert(0, first_line);
+                    vec
+                },
+            )
         },
     )(input)
 }
