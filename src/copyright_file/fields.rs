@@ -104,10 +104,22 @@ impl FieldName for Copyright {
     const NAME: &'static str = "Copyright";
 }
 
+impl ParseField for Copyright {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Files(pub Vec<String>);
 impl FieldName for Files {
     const NAME: &'static str = "Files";
+}
+
+impl ParseField for Files {
+    fn parse(input: &str) -> IResult<&str, Self> {
+        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
+    }
 }
 
 impl<T: SingleLineField + From<String>> ParseField for T {
@@ -128,17 +140,6 @@ fn parse_field_with_trimmed_list<T: FieldName>(input: &str) -> IResult<&str, Vec
             .map(|s| s.to_string())
             .collect()
     })(input)
-}
-
-impl ParseField for Copyright {
-    fn parse(input: &str) -> IResult<&str, Self> {
-        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
-    }
-}
-impl ParseField for Files {
-    fn parse(input: &str) -> IResult<&str, Self> {
-        map(parse_field_with_trimmed_list::<Self>, |v| Self(v))(input)
-    }
 }
 
 #[cfg(test)]
